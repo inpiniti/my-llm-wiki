@@ -66,10 +66,60 @@ function toDateString(v: unknown): string | undefined {
   return String(v);
 }
 
+/**
+ * gray-matter가 YAML 예외를 던지면 (예: 인용 없는 값에 `콜론 ` 포함) 빌드 전체가
+ * 죽는다. 그걸 막기 위한 관용 파서. 우리 frontmatter는 한 줄 `key: value` 형식이라
+ * 줄 단위로 느슨하게 파싱한다.
+ */
+function parseFrontmatterLenient(raw: string): {
+  data: Record<string, unknown>;
+  content: string;
+} {
+  const m = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
+  if (!m) return { data: {}, content: raw };
+  const [, fm, content] = m;
+  const data: Record<string, unknown> = {};
+  for (const line of fm.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const ci = line.indexOf(":");
+    if (ci === -1) continue;
+    const key = line.slice(0, ci).trim();
+    if (!key) continue;
+    const unquote = (s: string) => s.replace(/^["']|["']$/g, "");
+    const rawVal = line.slice(ci + 1).trim();
+    if (rawVal.startsWith("[") && rawVal.endsWith("]")) {
+      const inner = rawVal.slice(1, -1).trim();
+      data[key] = inner
+        ? inner.split(",").map((s) => unquote(s.trim()))
+        : [];
+    } else {
+      const v = unquote(rawVal);
+      data[key] = /^\d+$/.test(v) ? Number(v) : v;
+    }
+  }
+  return { data, content };
+}
+
 function parseFile(file: string): Entry {
   const slug = file.replace(/\.mdx$/, "");
   const raw = fs.readFileSync(path.join(CONTENT_DIR, file), "utf-8");
-  const { data, content } = matter(raw);
+  // gray-matter의 data는 any. 관용 파서 폴백과 호환되도록 동일하게 둔다.
+  let data: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  let content: string;
+  try {
+    const parsed = matter(raw);
+    data = parsed.data;
+    content = parsed.content;
+  } catch (err) {
+    console.warn(
+      `[content] frontmatter 파싱 실패 → 관용 파서로 폴백: ${file}`,
+      (err as Error).message
+    );
+    const parsed = parseFrontmatterLenient(raw);
+    data = parsed.data;
+    content = parsed.content;
+  }
   return {
     slug,
     title: data.title ?? slug,
