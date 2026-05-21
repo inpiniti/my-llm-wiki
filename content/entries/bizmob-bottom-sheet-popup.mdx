@@ -1,0 +1,91 @@
+---
+title: bizMOB에서 하단 팝업(bottom sheet) 만들기 — CSS로 popWrap 재정의
+tldr: bizMOB의 기본 popWrap은 화면 가운데 포지션이다. position:fixed + bottom:0 + transform:none으로 덮어쓰면 하단에서 올라오는 bottom sheet를 만들 수 있다.
+status: solved
+difficulty: 1
+tags: [bizmob, css, popup, bottom-sheet, ui]
+project: scgfms_client
+date: 2026-05-20
+impact: 기존 팝업은 가운데 뜨는 alert/confirm 패턴뿐이라 모바일 UX가 불편
+decision: CSS 클래스로 popWrap 위치를 override하여 네이티브처럼 하단에서 올라오는 팝업 구현
+related: [bizmob-card-inline-edit-sync]
+---
+
+## 관찰 / 문제
+
+fms-app-web2(React)에서는 PrimeReact `<Sidebar position="bottom">`으로 쉽게 하단 팝업을 만들 수 있다. scgfms_client(bizMOB/jQuery)에는 그에 상응하는 컴포넌트가 없어서 모든 팝업이 화면 가운데에 떴다.
+
+## 왜 그런가 / 원인
+
+`popup.css`의 `.popWrap` 기본 스타일:
+
+```css
+.popWrap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+}
+```
+
+## 해결
+
+프로젝트 CSS에 `.popBottom` 클래스를 추가해 위치를 덮어쓴다.
+
+```css
+/* C6G.css */
+.popWrap.popBottom {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  width: 100%;
+  max-width: 100%;
+  border-radius: 12px 12px 0 0;
+  transform: none;
+  padding: 0;
+}
+.popWrap.popBottom .pop_headerWrap { padding: 15px 10px 12px; }
+.popWrap.popBottom .pop_dataBox    { padding: 0 10px 10px; }
+```
+
+HTML 구조는 기존 `callDropdown` 패턴과 동일하게, `mask hide` → 열 때 `removeClass('hide')`, 닫을 때 `addClass('hide')`:
+
+```html
+<div id="mtrDetaLocPopup" class="mask hide">
+  <div class="popWrap popBottom">
+    <header class="pop_headerWrap">
+      <h1 class="title">제목</h1>
+      <button type="button" class="btn_close posL" id="mtrDetaLocClose">닫기</button>
+    </header>
+    <section class="pop_content">
+      <div class="pop_dataBox">
+        <input type="text" id="mtrDetaLocInput" ... />
+      </div>
+    </section>
+    <div class="pop_footBtn">
+      <button type="button" class="btn-gray" id="mtrDetaLocCancel">취소</button>
+      <button type="button" class="btn-basic" id="mtrDetaLocConfirm">확인</button>
+    </div>
+  </div>
+</div>
+```
+
+```js
+// 열기
+$('#mtrDetaLocPopup').removeClass('hide');
+// 닫기
+$('#mtrDetaLocClose, #mtrDetaLocCancel').bind('click', () =>
+  $('#mtrDetaLocPopup').addClass('hide')
+);
+```
+
+<Callout label="결론">
+bizMOB에는 bottom sheet 컴포넌트가 없다. 하지만 `mask` + `popWrap` 구조에서 `.popBottom` CSS 클래스 하나만 덮어쓰면 화면 하단 고정 팝업을 만들 수 있다. 열고 닫는 로직은 기존 `callDropdown` 패턴과 완전히 동일하다.
+</Callout>
+
+## 남은 의문
+
+슬라이드 애니메이션(translateY 전환)은 추가 CSS 없이는 없다. 필요하다면 `transition: transform 0.3s ease`를 추가하고 `.hide`일 때 `translateY(100%)`를 주면 된다.
