@@ -1,0 +1,81 @@
+---
+title: bMRender @class+ 는 클래스를 추가만 하고 제거하지 않는다
+tldr: bMRender 템플릿의 `@class+` 지시자는 반환값을 기존 클래스에 이어붙이기만 한다. HTML 초기값으로 `hide` 등을 박아두면 렌더링 후에도 영구적으로 남는다.
+status: solved
+difficulty: 2
+tags: [bizmob, bMRender, template, class, hide]
+project: scgfms_client
+date: 2026-05-21
+impact: 조건부 클래스 로직을 짰는데도 특정 요소가 항상 숨겨지거나 항상 표시되는 버그
+decision: 초기 HTML에 상태 클래스를 두지 말고, @class+ 반환값으로만 클래스를 제어한다
+related: [bizmob-window-open-callback]
+---
+
+## 관찰 / 문제
+
+bMRender 템플릿에서 `@class+`로 조건부 클래스를 설정했는데, 특정 버튼이 항상 `hide` 상태였다. `@class+` 반환값에 `hide`를 빼도 효과가 없었다.
+
+## 왜 그런가 / 원인
+
+`@class+`는 **추가 전용(append-only)** 지시자다. 렌더 시점에 반환한 문자열을 **기존 class 목록에 이어붙인다**. 기존 클래스를 지우거나 교체하지 않는다.
+
+따라서 HTML 마크업에 이미 `hide` 클래스가 있으면, `@class+`가 아무 것도 추가하지 않아도 `hide`는 영원히 남아 있다.
+
+```html
+<!-- ❌ 위험한 패턴 — hide 가 초기값으로 박혀 있음 -->
+<span class="badge hide">N</span>
+
+<!-- bMRender @class+ 로 hide 를 빼줄 수 없음! -->
+{
+  target: '@class+',
+  value: (arg) => arg.item.hasFlag ? '' : 'hide'
+  // arg.item.hasFlag 가 true 여도 초기 hide 는 그대로 남음
+}
+```
+
+```html
+<!-- ✅ 올바른 패턴 — 초기 HTML 에 상태 클래스 없음 -->
+<span class="badge">N</span>
+
+{
+  target: '@class+',
+  value: (arg) => arg.item.hasFlag ? '' : ' hide'
+}
+```
+
+## 해결
+
+초기 HTML 템플릿에서 `hide`, `active`, `has-memo` 같은 **상태를 나타내는 클래스를 제거**하고, 해당 클래스의 on/off를 전적으로 `@class+` 반환값이 책임지도록 한다.
+
+`has-memo` 클래스를 행(row)에 붙이는 예:
+
+```javascript
+{
+  type: 'single',
+  target: '@class+',
+  value: (arg) => {
+    let cls = arg.item.mtrNum === mtrNum ? ' bg_skyblue' : '';
+    const hasMemo = arg.item._hasMemo === true || String(arg.item.memo || '').trim().length > 0;
+    if (hasMemo) cls += ' has-memo';
+    return cls;
+  },
+},
+```
+
+초기 HTML:
+
+```html
+<!-- ❌ 이렇게 하면 has-memo 가 고정됨 -->
+<li class="table_swiper has-memo">...</li>
+
+<!-- ✅ 상태 클래스 없이 시작 -->
+<li class="table_swiper">...</li>
+```
+
+<Callout label="결론">
+bMRender `@class+`는 append-only다. 초기 HTML에 상태 클래스(hide, active, selected 등)를 넣으면 렌더링 후 제거할 방법이 없다. 모든 상태 전환 클래스는 초기 HTML에서 빼고 `@class+` 반환값으로만 제어해야 한다.
+</Callout>
+
+## 남은 의문
+
+`@class`(플러스 없는 버전)가 있는지, 있다면 기존 클래스를 **교체**하는지 확인 필요.

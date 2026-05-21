@@ -1,0 +1,80 @@
+---
+title: bizMOB Window.open에서 _sCallback 없으면 창 닫혀도 resume 안 불림
+tldr: bizMOB.Window.open으로 서브 창을 열 때 _sCallback을 지정하지 않으면, 창이 닫혀도 부모 페이지의 콜백 함수가 호출되지 않는다. 메모·방문예약 등 서브 창 결과를 부모에 반영하려면 반드시 _sCallback을 붙여야 한다.
+status: solved
+difficulty: 2
+tags: [bizmob, window, callback, resume, 메모]
+project: scgfms_client
+date: 2026-05-21
+impact: 메모 등록 후 목록으로 돌아와도 빨간색 표시가 안 되는 버그의 근본 원인
+decision: bizMOB.Window.open 호출부에 _sCallback 추가, 부모 페이지에 lastMemoInfo 저장 후 resume에서 처리
+related: [bizmob-card-inline-edit-sync]
+---
+
+## 관찰 / 문제
+
+메모 팝업(C6G403000100U)에서 메모를 등록하고 닫아도, 목록 페이지의 메모 버튼이 빨간색으로 바뀌지 않았다. `page.resume` → `updateMemoStatus` 흐름은 코드에 구현되어 있었으나 전혀 실행되지 않았다.
+
+## 왜 그런가 / 원인
+
+`bizMOB.Window.open`에서 `_sCallback`을 생략하면 서브 창이 닫혀도 부모 페이지의 어떤 함수도 호출되지 않는다.
+
+```js
+// ❌ 잘못된 코드 — 창이 닫혀도 아무것도 실행 안 됨
+bizMOB.Window.open({
+  _sPagePath: 'C6G/html/C6G403000100U.html',
+  _oMessage: { memoFlag: '40', ...data },
+});
+
+// ✅ 수정 — 창 닫히면 page.resume 호출
+bizMOB.Window.open({
+  _sPagePath: 'C6G/html/C6G403000100U.html',
+  _sCallback: 'page.resume',
+  _oMessage: { memoFlag: '40', ...data },
+});
+```
+
+`bizMOB.addEvent('resume', 'page.setEnabled')`로 등록한 전역 resume 이벤트와 `_sCallback`은 **별개**다. 전역 resume은 앱이 백그라운드에서 복귀할 때 발화하고, `_sCallback`은 특정 Window.open이 닫힐 때만 발화한다.
+
+## 해결
+
+1. `bizMOB.Window.open`에 `_sCallback: 'page.resume'` 추가
+2. 팝업 열기 직전에 필요한 컨텍스트를 저장 (`page.lastMemoInfo`)
+3. `page.resume`에서 저장된 컨텍스트로 후처리
+
+```js
+// 열기
+$('.contents').on('click', '.btn_memo', function () {
+  const data = $(this).closest('.meter-record').data().data;
+
+  page.lastMemoInfo = {
+    mtrNum: data.mtrNum,
+    bldNum: data.mtrNum,
+    instPlaceNum: data.instPlaceNum,
+  };
+
+  bizMOB.Window.open({
+    _sPagePath: 'C6G/html/C6G403000100U.html',
+    _sCallback: 'page.resume',          // ← 핵심
+    _oMessage: { memoFlag: '40', ...data, bldNum: data.mtrNum },
+  });
+});
+
+// 닫힌 후
+resume: async function (data) {
+  page.disabled = false;
+  if (page.lastMemoInfo) {
+    await page.updateMemoStatus(page.lastMemoInfo);
+    page.lastMemoInfo = null;
+  }
+  page.loadData();
+},
+```
+
+<Callout label="결론">
+bizMOB에서 서브 창 결과를 부모에 반영하려면 _sCallback이 필수다. 이를 빠뜨리면 서브 창이 아무리 잘 동작해도 부모 페이지는 창이 닫혔다는 사실조차 모른다. 전역 addEvent('resume')과 혼동하기 쉬우니 주의.
+</Callout>
+
+## 남은 의문
+
+`_sCallback`으로 전달되는 `data` 파라미터의 내용이 어디서 결정되는지(서브 창이 close 시 넘기는 값인지, 항상 빈 객체인지) 정확히 문서화되지 않았다.
