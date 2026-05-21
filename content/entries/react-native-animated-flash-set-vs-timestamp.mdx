@@ -1,0 +1,81 @@
+---
+title: React Native Animated flash — Set 방식 vs timestamp 방식
+tldr: 동일 항목에 연속 감지 시 Set은 state 변화 없어 animation이 실행 안 됨. timestamp 방식으로 교체하면 항상 실행됨.
+status: solved
+difficulty: 2
+tags: [react-native, animation, state, bug]
+project: bitcoin-simulation-app
+date: 2026-05-21
+impact: 실시간 탭에서 가격 감지가 되어도 배경색 flash가 종종 누락되는 UX 결함
+decision: detectedIds(Set) → detectedTicks({id: timestamp}) 객체로 전환, 계좌 탭과 동일한 패턴 통일
+---
+
+## 관찰 / 문제
+
+실시간 탭에서 가격이 감지되면 카드 배경이 파란색으로 flash해야 하는데,
+동일 종목의 가격이 연속으로 들어올 때 두 번째 이후부터는 flash가 발생하지 않았다.
+가격 자체는 정상 업데이트됨 — 감지는 하되 시각 피드백만 빠지는 현상.
+
+## 왜 그런가 / 원인
+
+`detectedIds: Set<string>` state를 사용하여 감지된 tradeId를 추가하는 방식이었음.
+
+```js
+setDetectedIds((prev) => {
+  const next = new Set(prev);
+  next.add(tradeId); // 이미 있으면 Set 내용이 변하지 않음
+  return next;
+});
+```
+
+`Set`은 동일 값을 추가해도 내용이 같으므로 React가 state 변경으로 인식하지 않거나,
+re-render가 돼도 `isDetected` prop이 여전히 `true`라서 `useEffect`가 실행되지 않음.
+
+```js
+useEffect(() => {
+  if (isDetected) { // true → true: 값이 바뀌지 않아 effect 미실행
+    flashAnim.setValue(1);
+    ...
+  }
+}, [isDetected]);
+```
+
+## 해결
+
+계좌 탭(`account.jsx`)이 이미 사용하는 **timestamp 방식**으로 통일.
+
+```js
+// state: { [tradeId]: number (Date.now()) }
+const [detectedTicks, setDetectedTicks] = useState({});
+
+const flashDetection = useCallback((tradeId) => {
+  setDetectedTicks((prev) => ({ ...prev, [tradeId]: Date.now() }));
+}, []);
+```
+
+TradeRow 내부에서는 prevRef로 이전 값과 비교:
+
+```js
+function TradeRow({ item, flashTick, ... }) {
+  const prevTickRef = useRef(flashTick);
+  useEffect(() => {
+    if (flashTick && flashTick !== prevTickRef.current) {
+      prevTickRef.current = flashTick;
+      flashAnim.setValue(1);
+      Animated.timing(flashAnim, { toValue: 0, duration: 1500, useNativeDriver: false }).start();
+    }
+  }, [flashTick]);
+}
+```
+
+`Date.now()`는 호출할 때마다 다른 값이므로 연속 감지 시에도 항상 effect가 실행됨.
+또한 3초 타임아웃/cleanup 로직이 필요 없어져 코드가 단순해짐.
+
+<Callout label="결론">
+"감지 여부(boolean/Set)"가 아닌 "감지 시각(timestamp)"을 state로 쓰면 연속 이벤트에도 animation이 항상 실행된다.
+React에서 "같은 값으로 재설정"은 변화가 없으므로 side-effect를 트리거하려면 항상 새로운 값이어야 한다.
+</Callout>
+
+## 남은 의문
+
+- 더 복잡한 경우(짧은 간격 내 매우 빠른 연속 감지)에서 timestamp 충돌 가능성? → Date.now()는 ms 단위로 같아질 수 있으나 실제 WS 가격 수신 빈도에서는 문제 없을 것으로 보임.
