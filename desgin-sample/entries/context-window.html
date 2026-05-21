@@ -1,0 +1,138 @@
+<article data-view="entry-context-window" data-screen-label="04 컨텍스트">
+  <div class="entry">
+    <a href="#/" class="entry-back">전체 목록으로</a>
+
+    <header class="entry-head">
+      <div class="entry-meta-top">
+        <span>№ 04</span>
+        <span class="diff diff-2">중급</span>
+        <span class="status-dot status-open">열린 문제</span>
+      </div>
+      <h1>긴 컨텍스트에서 모델은 가운데를 잊는다</h1>
+      <p class="entry-tldr">
+        128k 윈도우를 광고하지만, 가운데에 둔 지시는 잘 무시된다. “lost in the middle” 현상은
+        내 프로젝트의 RAG에서도 그대로 재현됐다. 임시 회피책은 있지만, 깔끔한 해결은 아직 못 찾았다.
+      </p>
+
+      <div class="entry-meta-grid">
+        <div><span class="label">관련 프로젝트</span><span class="value">사내 문서 QA</span></div>
+        <div><span class="label">증상</span><span class="value">중간 문서 무시</span></div>
+        <div><span class="label">시도한 패턴</span><span class="value">4가지</span></div>
+        <div><span class="label">상태</span><span class="value">완전 해결 아님</span></div>
+      </div>
+    </header>
+
+    <div class="entry-body">
+
+      <h2 data-num="§1">증상</h2>
+      <p>
+        RAG로 상위 20개 문서를 검색해 컨텍스트에 넣었더니, 답이 들어 있는 문서가
+        검색 결과의 <b>7~14번째</b>일 때 모델이 자주 “모른다”고 답했다.
+        같은 문서를 1번이나 20번에 두면 답을 잘 찾았다.
+      </p>
+
+      <p>
+        Liu et al. (2023) 의 “Lost in the Middle” 논문에서 이미 보고된 현상이지만,
+        내가 직접 측정해보기 전에는 “내 검색 품질 문제”라고 의심하고 있었다.
+        문서 위치만 셔플해도 정확도가 흔들린다면, 검색이 아니라 모델 쪽 문제다.
+      </p>
+
+      <h3>측정 결과</h3>
+      <pre>// 정답 문서를 위치별로 두고 정확도 측정 (Top-20 컨텍스트, n=200)
+position  1     5     10    15    20
+acc       0.82  0.74  0.61  0.69  0.78
+              ↑ 가운데에서 뚝 떨어짐</pre>
+
+      <h2 data-num="§2">왜 가운데가 약한가</h2>
+
+      <ul>
+        <li>훈련 데이터의 분포 — 대부분의 문서는 <b>시작</b>과 <b>끝</b>에 핵심 정보가 있다 (제목, 결론). 모델이 그 패턴을 학습한다.</li>
+        <li>위치 인코딩의 성질 — RoPE 계열은 거리가 멀어질수록 표현이 모호해진다. 가운데는 어느 쪽 끝에서 봐도 “멀다”.</li>
+        <li>Attention의 평균화 효과 — 긴 컨텍스트에서 가운데 토큰들은 양쪽으로 어텐션이 분산되어 개별 영향이 옅어진다.</li>
+      </ul>
+
+      <h2 data-num="§3">내가 시도해본 회피</h2>
+
+      <div class="callout">
+        <div class="callout-label">시도 1</div>
+        <div class="callout-body">
+          <p><b>중요한 문서를 양 끝에 배치</b>. 검색 점수 1~3위는 맨 앞, 4~6위는 맨 뒤, 나머지는 가운데. 정확도가 5pp 정도 올랐지만, 양 끝에 들어갈 만큼 신뢰할 만한 문서가 항상 있는 건 아니다.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-label">시도 2</div>
+        <div class="callout-body">
+          <p><b>지시를 문서 뒤에 한 번 더 반복</b>. “<i>위 문서들을 참고하여 답해라</i>”를 컨텍스트 마지막에 추가. 모델이 마지막을 더 신뢰하는 성질을 이용. 효과는 있었으나 토큰 비용이 늘었다.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-label">시도 3</div>
+        <div class="callout-body">
+          <p><b>문서 수 줄이고 reranker 강화</b>. 20 → 5로 줄이면 “가운데”의 정의 자체가 약해진다. RAG 품질의 무게중심을 검색에서 reranker로 옮긴 셈.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <div class="callout-label">시도 4</div>
+        <div class="callout-body">
+          <p><b>요약 후 주입</b>. 각 문서를 별도 호출로 1~2문장 요약한 뒤, 요약본만 컨텍스트에 넣음. 가장 안정적이지만, 호출 수가 N배 늘어나 비용/지연이 큼.</p>
+        </div>
+      </div>
+
+      <h2 data-num="§4">현재의 선택</h2>
+
+      <p>
+        프로덕션에선 <b>시도 1 + 3</b>의 조합으로 정착했다.
+        Reranker로 top-5를 뽑고, 그 안에서도 점수 상위 2개는 양 끝, 3~5위는 가운데.
+        정확도 0.81 정도에서 안정. 이상적이진 않지만 비용/지연 제약 안에서 최적.
+      </p>
+
+      <div class="sidenote">
+        <b>현장 메모.</b> Anthropic의 prompt caching이나 OpenAI의 message-level cache는
+        고정된 “앞쪽” 컨텍스트에 강하다. 문서 순서를 자주 바꾸면 캐시 hit rate가 떨어진다.
+        “문서를 잘 배치” 와 “캐시 잘 활용”이 충돌하는 지점이 있다는 게 골치 아픈 부분.
+      </div>
+
+      <h2 data-num="§5">남은 의문 · 열림</h2>
+
+      <blockquote>
+        <p>1. 신형 모델(Gemini 2.x, Claude 4.x)에서 lost-in-the-middle이 정말 줄어들었는가?
+        벤치는 좋아 보이는데, 실제 RAG 워크로드에서도 그런가?</p>
+
+        <p>2. 모든 문서에 번호를 매기고 “문서 7에서 인용하라”고 강제하면 가운데 무시가 줄어든다는 보고가 있다.
+        내 데이터에서 재현되는가?</p>
+
+        <p>3. 가운데를 강조하기 위해 attention을 직접 편향시키는 prompt 기법
+        (“중요: 문서 10을 반드시 검토하라”) 은 진짜 효과가 있는가, 플라시보인가?</p>
+      </blockquote>
+
+      <p>이 항목은 “진행 중”이 아니라 의도적으로 “열린 문제”로 둔다 — 모델이 바뀌면 답이 또 바뀐다.</p>
+
+      <div class="entry-footer">
+        <div>
+          <h4>참고 자료</h4>
+          <ul>
+            <li>Liu et al., <i>Lost in the Middle: How Language Models Use Long Contexts</i> (2023)</li>
+            <li>Anthropic, "Long context prompting tips"</li>
+            <li>Needle-in-a-Haystack 벤치마크 (G. Kamradt)</li>
+          </ul>
+        </div>
+        <div>
+          <h4>연결된 항목</h4>
+          <ul>
+            <li><a href="#/entry/tokenizer-korean">№01 — 토크나이저</a></li>
+            <li><a href="#/entry/prompt-strategy">№05 — Prompt 전략</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <nav class="entry-nav">
+        <a href="#/entry/self-attention" class="prev"><span class="label">← 이전</span>Self-Attention</a>
+        <a href="#/entry/prompt-strategy" class="next"><span class="label">다음 →</span>Prompt 전략</a>
+      </nav>
+
+    </div>
+  </div>
+</article>

@@ -1,0 +1,171 @@
+<article data-view="entry-sampling-params" data-screen-label="02 샘플링">
+  <div class="entry">
+    <a href="#/" class="entry-back">전체 목록으로</a>
+
+    <header class="entry-head">
+      <div class="entry-meta-top">
+        <span>№ 02</span>
+        <span class="diff diff-2">중급</span>
+        <span class="status-dot status-solved">해결됨</span>
+      </div>
+      <h1>Temperature·Top-k·Top-p, 결국 무엇을 만지는가</h1>
+      <p class="entry-tldr">
+        세 노브는 모두 출력의 “다양성”에 영향을 주지만, 확률 분포의 <em>다른 부분</em>을 깎는다.
+        직접 슬라이더로 본 뒤에야 차이가 분명해졌다.
+      </p>
+
+      <div class="entry-meta-grid">
+        <div><span class="label">관련 프로젝트</span><span class="value">SQL 생성 에이전트</span></div>
+        <div><span class="label">증상</span><span class="value">간헐적 환각</span></div>
+        <div><span class="label">시도</span><span class="value">3가지 파라미터 매트릭스</span></div>
+        <div><span class="label">정착</span><span class="value">T=0.3 · top_p=0.9</span></div>
+      </div>
+    </header>
+
+    <div class="entry-body">
+
+      <h2 data-num="§1">증상</h2>
+      <p>
+        SQL 생성 에이전트가 99% 잘 작동하다가 가끔 존재하지 않는 컬럼명을 만들어냈다.
+        같은 질문을 두 번 던지면 한 번은 맞고 한 번은 틀렸다.
+        “창의성”이 필요 없는 작업이었으므로 sampling을 조여야 했다.
+      </p>
+
+      <h2 data-num="§2">세 개의 노브, 한 분포</h2>
+      <p>
+        디코딩 단계에서 모델은 다음 토큰에 대한 확률 분포를 가지고 있다.
+        세 파라미터는 이 분포를 다음과 같이 변형한다:
+      </p>
+
+      <ul>
+        <li><b>Temperature (T)</b>: 분포 자체를 <em>평탄/날카롭게</em> 만든다.
+            <code>softmax(logit / T)</code>. T가 낮으면 가장 확실한 토큰에 더 집중.</li>
+        <li><b>Top-k</b>: 확률 상위 <em>k개만 남기고</em> 나머지 컷.
+            k=1이면 greedy와 같다.</li>
+        <li><b>Top-p (nucleus)</b>: 확률 누적합이 p에 도달할 때까지의 토큰만 남긴다.
+            분포가 뾰족하면 적게, 평평하면 많이 살아남는다.</li>
+      </ul>
+
+      <h3>직접 만져보기</h3>
+      <p>
+        가상의 문장 “오늘 날씨가 ___” 다음에 올 후보 10개의 logit을 미리 정해 두었다.
+        세 슬라이더를 움직이면 각 단계의 효과를 분리해서 볼 수 있다.
+      </p>
+
+      <div class="demo" id="demo-sampling">
+        <div class="demo-head">
+          <span class="title">샘플링 시각화</span>
+          <span class="badge">interactive</span>
+        </div>
+        <div class="demo-body">
+          <div class="samp-grid">
+            <div class="samp-controls">
+              <div class="samp-context">오늘 날씨가</div>
+
+              <div class="samp-control">
+                <div class="samp-control-head">
+                  <span>Temperature</span>
+                  <b data-readout="temp">1.00</b>
+                </div>
+                <input type="range" min="0.05" max="2.0" step="0.05" value="1.0" data-control="temp" />
+              </div>
+
+              <div class="samp-control">
+                <div class="samp-control-head">
+                  <span>Top-k</span>
+                  <b data-readout="topk">0</b>
+                </div>
+                <input type="range" min="0" max="10" step="1" value="0" data-control="topk" />
+              </div>
+
+              <div class="samp-control">
+                <div class="samp-control-head">
+                  <span>Top-p</span>
+                  <b data-readout="topp">1.00</b>
+                </div>
+                <input type="range" min="0.1" max="1.0" step="0.05" value="1.0" data-control="topp" />
+              </div>
+
+              <div class="samp-action">
+                <button class="samp-btn">샘플링</button>
+                <span class="samp-readout">슬라이더를 움직이고 한 번 뽑아 보세요.</span>
+              </div>
+            </div>
+
+            <div class="samp-dist"></div>
+          </div>
+        </div>
+      </div>
+
+      <h2 data-num="§3">슬라이더에서 본 직관</h2>
+
+      <div class="callout">
+        <div class="callout-label">규칙 1</div>
+        <div class="callout-body">
+          <p><b>Temperature는 형태를 바꾼다.</b> 낮추면 분포가 한 쪽으로 쏠리고, 높이면 평평해진다. 분포의 <em>모양</em> 변화이지, 잘라내는 것이 아니다.</p>
+        </div>
+      </div>
+      <div class="callout">
+        <div class="callout-label">규칙 2</div>
+        <div class="callout-body">
+          <p><b>Top-k는 칸을 센다.</b> 분포가 평평하든 뾰족하든 정확히 k개만 남긴다. 컨텍스트에 따라 “적절한 k”가 다르다는 게 약점.</p>
+        </div>
+      </div>
+      <div class="callout">
+        <div class="callout-label">규칙 3</div>
+        <div class="callout-body">
+          <p><b>Top-p는 적응적이다.</b> 모델이 확신 있을 때(분포가 뾰족) 후보가 적게, 모호할 때 후보가 많이 살아남는다. 그래서 보통 top-k보다 top-p가 권장된다.</p>
+        </div>
+      </div>
+
+      <h2 data-num="§4">내 프로젝트에서의 정착값</h2>
+
+      <p>여러 매트릭스를 돌려본 후, 작업의 성격에 따라 두 세트로 정리했다:</p>
+
+      <pre>// 사실 추출, SQL/JSON 생성, 분류
+T = 0.0  ~  0.3
+top_p = 0.9
+top_k = 0  (사용 안함)
+
+// 요약, 카피라이팅, 대화
+T = 0.7  ~  1.0
+top_p = 0.95
+top_k = 0</pre>
+
+      <div class="sidenote">
+        <b>현장 메모.</b> <code>T=0</code>이 결정론적인 것은 아니다. 동률 발생, 부동소수점, 그리고 KV cache 차이로 같은 입력도 결과가 흔들릴 수 있다. 진짜 reproducibility가 필요하면 seed 고정 + greedy + cache 끄기까지 가야 한다.
+      </div>
+
+      <h2 data-num="§5">남은 의문</h2>
+
+      <blockquote>
+        Min-p, typical sampling, mirostat 같은 “분포 모양 자체”를 다루는 새로운 sampler들은
+        실전에서 top-p보다 더 안정적인가? 작은 모델일수록 효과가 더 크다는 보고가 있다.
+      </blockquote>
+
+      <div class="entry-footer">
+        <div>
+          <h4>참고 자료</h4>
+          <ul>
+            <li>Holtzman et al., <i>The Curious Case of Neural Text Degeneration</i> (top-p 원논문)</li>
+            <li>HuggingFace generation docs — <code>GenerationConfig</code></li>
+            <li>Karpathy, "Intro to LLMs" — sampling 시각화 부분</li>
+          </ul>
+        </div>
+        <div>
+          <h4>연결된 항목</h4>
+          <ul>
+            <li><a href="#/entry/self-attention">№03 — Self-Attention 헤드들</a></li>
+            <li><a href="#/entry/prompt-strategy">№05 — Prompt 전략</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <nav class="entry-nav">
+        <a href="#/entry/tokenizer-korean" class="prev"><span class="label">← 이전</span>토크나이저</a>
+        <a href="#/entry/self-attention" class="next"><span class="label">다음 →</span>Self-Attention</a>
+      </nav>
+
+    </div>
+  </div>
+</article>

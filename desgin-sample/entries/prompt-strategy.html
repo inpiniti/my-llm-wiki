@@ -1,0 +1,141 @@
+<article data-view="entry-prompt-strategy" data-screen-label="05 프롬프트">
+  <div class="entry">
+    <a href="#/" class="entry-back">전체 목록으로</a>
+
+    <header class="entry-head">
+      <div class="entry-meta-top">
+        <span>№ 05</span>
+        <span class="diff diff-2">중급</span>
+        <span class="status-dot status-solved">해결됨</span>
+      </div>
+      <h1>System prompt에 넣을까, Few-shot으로 보여줄까</h1>
+      <p class="entry-tldr">
+        규칙을 “말로 설명”하는 것과 “예시로 보여주는” 것은 다르게 작동한다.
+        둘 다 쓸 수 있지만, 무엇을 어디에 둘지는 작업의 종류에 따라 갈린다.
+      </p>
+
+      <div class="entry-meta-grid">
+        <div><span class="label">관련 프로젝트</span><span class="value">고객 응대 자동화</span></div>
+        <div><span class="label">실험</span><span class="value">A/B 80 cases</span></div>
+        <div><span class="label">정착</span><span class="value">하이브리드</span></div>
+        <div><span class="label">eval 지표</span><span class="value">정확도 + 톤</span></div>
+      </div>
+    </header>
+
+    <div class="entry-body">
+
+      <h2 data-num="§1">두 가지 길</h2>
+
+      <p>같은 동작을 모델에게 만들기 위해, 보통 두 방식이 있다:</p>
+
+      <pre>// (A) System prompt — 규칙으로 말한다
+"답변은 3문장 이내로. 존댓말. 불확실하면 '확인 후 알려드리겠습니다'."
+
+// (B) Few-shot — 예시로 보여준다
+Q: 환불 가능한가요?
+A: 구매 30일 이내라면 가능합니다. 확인 후 알려드리겠습니다.
+
+Q: 배송이 늦어요.
+A: 송장번호로 확인해보겠습니다. 잠시만요.
+
+Q: ___ (실제 질문)</pre>
+
+      <p>둘 다 “3문장, 존댓말, 불확실하면 보류”라는 같은 동작을 유도한다. 그런데 실험해보면 결과가 다르다.</p>
+
+      <h2 data-num="§2">관찰</h2>
+
+      <h3>System prompt가 더 잘 듣는 것</h3>
+      <ul>
+        <li><b>형식적인 제약</b> — JSON 키 이름, 응답 길이 상한, 금지어. 명시적 룰일수록 시키는 대로 한다.</li>
+        <li><b>역할/페르소나</b> — “너는 친절한 상담사”. 톤의 전반적 기조.</li>
+        <li><b>거시적 행동</b> — “확신 없으면 답하지 마라”. 메타 정책.</li>
+      </ul>
+
+      <h3>Few-shot이 더 잘 듣는 것</h3>
+      <ul>
+        <li><b>말로 풀기 어려운 톤</b> — “적절히 사무적이지만 차갑지 않게”는 예시 2~3개가 한 단락보다 정확하다.</li>
+        <li><b>구조화된 출력의 미묘한 패턴</b> — JSON의 어떤 필드는 비워둬도 되고 어떤 필드는 안 된다는 규칙.</li>
+        <li><b>도메인 특수 어휘</b> — 회사 약어, 내부 코드명. 예시로 한 번 보여주면 그 다음부터 자연스럽게 쓴다.</li>
+      </ul>
+
+      <div class="callout">
+        <div class="callout-label">규칙</div>
+        <div class="callout-body">
+          <p>
+            <b>규칙은 system, 패턴은 few-shot.</b><br/>
+            언어로 정확히 떨어지는 제약은 위에서, 언어로 풀어쓰기 애매한 “감”은 아래(예시)에서 다룬다.
+          </p>
+        </div>
+      </div>
+
+      <h2 data-num="§3">상호작용 (의외였던 부분)</h2>
+
+      <p>두 가지를 같이 쓸 때, 서로 충돌하면 <b>예시가 이긴다</b>.</p>
+
+      <pre>System: "답변은 항상 3문장 이내."
+Few-shot 예시 평균: 5문장
+→ 실제 출력: 4~5문장 (예시 쪽으로 끌림)</pre>
+
+      <p>
+        그래서 few-shot을 쓸 때는 예시 자체가 시스템 규칙을 어기지 않도록 신경 써서 만들어야 한다.
+        “예시는 부주의하게, 시스템은 엄격하게”는 잘 작동하지 않는다.
+      </p>
+
+      <div class="sidenote">
+        <b>현장 메모.</b> Anthropic 모델은 system prompt를 비교적 강하게 따르고,
+        OpenAI 모델은 최근 예시(in-context)에 더 끌리는 경향이 있다.
+        벤더를 바꿀 때 이 부분이 가장 먼저 깨진다.
+      </div>
+
+      <h2 data-num="§4">내 프로젝트의 최종 구조</h2>
+
+      <pre>SYSTEM
+  ├─ 역할 ("너는 ___의 고객 상담 도우미")
+  ├─ 절대 규칙 (5개 이내, 짧게)
+  ├─ 출력 스키마 (JSON)
+  └─ 환각 방지 ("모르면 'check' 필드를 true로")
+
+USER (in-context)
+  ├─ Few-shot 3 ~ 5개 (실제 운영 케이스에서 발췌)
+  ├─ 검색된 문서 (있을 때만)
+  └─ 사용자 질문</pre>
+
+      <p>
+        예시 개수는 3개가 가장 비용/품질이 좋았다. 5개를 넘기면 정확도는 거의 안 오르는데 토큰만 늘었다.
+      </p>
+
+      <h2 data-num="§5">남은 의문</h2>
+
+      <blockquote>
+        Few-shot 예시는 “비슷한 질문”으로 그때그때 retrieval해서 동적으로 넣어주는 게
+        고정 예시보다 항상 좋은가? Cache hit rate가 떨어지는 단점을 감수할 만한가?
+      </blockquote>
+
+      <p>다음 스프린트에 dynamic few-shot 실험을 붙여보고, 결과는 별도 항목으로 갈라낼 예정.</p>
+
+      <div class="entry-footer">
+        <div>
+          <h4>참고 자료</h4>
+          <ul>
+            <li>Brown et al., <i>Language Models are Few-Shot Learners</i> (GPT-3 paper)</li>
+            <li>Anthropic, "Prompt engineering overview"</li>
+            <li>Reynolds & McDonell, <i>Prompt Programming for LLMs</i></li>
+          </ul>
+        </div>
+        <div>
+          <h4>연결된 항목</h4>
+          <ul>
+            <li><a href="#/entry/tokenizer-korean">№01 — 토크나이저</a></li>
+            <li><a href="#/entry/context-window">№04 — 긴 컨텍스트</a></li>
+          </ul>
+        </div>
+      </div>
+
+      <nav class="entry-nav">
+        <a href="#/entry/context-window" class="prev"><span class="label">← 이전</span>긴 컨텍스트</a>
+        <a href="#/" class="next"><span class="label">목록으로 →</span>전체 위키</a>
+      </nav>
+
+    </div>
+  </div>
+</article>

@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>LLM 위키 — 프로젝트 작업 노트</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:ital,opsz,wght@0,8..60,300..700;1,8..60,300..700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<header class="site-nav">
+  <div class="site-nav-inner">
+    <a href="#/" class="brand">
+      <span class="mark">LLM 위키</span>
+      <span class="mark-sub">a working notebook</span>
+    </a>
+    <div class="nav-meta">
+      <span><b>5</b> 항목</span>
+      <span>v.<b>0.1</b></span>
+      <span>2026.05</span>
+    </div>
+  </div>
+</header>
+
+<main id="app">
+
+<!-- ============================================================
+                            HOME
+============================================================ -->
+<section data-view="home" data-screen-label="Home">
+  <div class="hero">
+    <div class="hero-eyebrow">개인 작업 노트 · 프로젝트와 함께 자라는 위키</div>
+    <h1>LLM과 일하며 배운 것들을<br/><em>다시 꺼내 쓸 수 있게</em> 정리한다.</h1>
+    <p class="lede">
+      이 위키는 모델을 설명하기 위한 교과서가 아니다. 내가 진행 중인 프로젝트에서 마주친 문제와,
+      LLM과의 대화를 통해 도달한 해결, 그리고 아직 풀리지 않은 의문들을 모아두는 노트다.
+      각 항목은 짧은 본문과 함께, 가능한 경우 직접 만져볼 수 있는 시각화를 포함한다.
+    </p>
+    <div class="hero-stats">
+      <div class="stat"><b>5</b><span>항목</span></div>
+      <div class="stat"><b>3</b><span>인터랙티브 데모</span></div>
+      <div class="stat"><b>2</b><span>열린 문제</span></div>
+      <div class="stat"><b>1</b><span>진행 중</span></div>
+    </div>
+  </div>
+
+  <div class="filters">
+    <span class="filters-label">난이도</span>
+    <button class="chip is-active" data-filter="diff" data-value="all">전체 <span class="count">5</span></button>
+    <button class="chip" data-filter="diff" data-value="1">초급 <span class="count">1</span></button>
+    <button class="chip" data-filter="diff" data-value="2">중급 <span class="count">3</span></button>
+    <button class="chip" data-filter="diff" data-value="3">고급 <span class="count">1</span></button>
+    <span class="filters-label" style="margin-left:18px">상태</span>
+    <button class="chip is-active" data-filter="status" data-value="all">전체</button>
+    <button class="chip" data-filter="status" data-value="solved">해결됨</button>
+    <button class="chip" data-filter="status" data-value="wip">진행 중</button>
+    <button class="chip" data-filter="status" data-value="open">열린 문제</button>
+  </div>
+
+  <div class="card-grid">
+    <a class="card" href="#/entry/tokenizer-korean" data-diff="1" data-status="solved">
+      <div class="card-head">
+        <span class="card-num">№ 01</span>
+        <span class="diff diff-1">초급</span>
+      </div>
+      <h3 class="card-title">한국어는 왜 토큰을 더 많이 먹는가</h3>
+      <p class="card-tldr">같은 의미의 문장을 영어와 한국어로 넣었더니 토큰 수가 2배 차이 났다. 이유와, 비용에 미치는 영향.</p>
+      <div class="card-foot">
+        <div class="card-tags"><span class="tag">tokenizer</span><span class="tag">cost</span></div>
+        <span class="status-dot status-solved">해결됨</span>
+      </div>
+    </a>
+
+    <a class="card" href="#/entry/sampling-params" data-diff="2" data-status="solved">
+      <div class="card-head">
+        <span class="card-num">№ 02</span>
+        <span class="diff diff-2">중급</span>
+      </div>
+      <h3 class="card-title">Temperature·Top-k·Top-p, 결국 무엇을 만지는가</h3>
+      <p class="card-tldr">세 노브가 모두 “다양성”을 조절한다고 하지만, 분포에서 잘라내는 위치가 다르다. 슬라이더로 직접 본 결론.</p>
+      <div class="card-foot">
+        <div class="card-tags"><span class="tag">sampling</span><span class="tag">inference</span></div>
+        <span class="status-dot status-solved">해결됨</span>
+      </div>
+    </a>
+
+    <a class="card" href="#/entry/self-attention" data-diff="3" data-status="wip">
+      <div class="card-head">
+        <span class="card-num">№ 03</span>
+        <span class="diff diff-3">고급</span>
+      </div>
+      <h3 class="card-title">Self-Attention 헤드들은 정말 “무언가”를 본다</h3>
+      <p class="card-tldr">하나의 레이어 안에서 어떤 헤드는 직전 토큰, 어떤 헤드는 지시어 해소를 담당한다. 작은 문장으로 확인.</p>
+      <div class="card-foot">
+        <div class="card-tags"><span class="tag">transformer</span><span class="tag">interpretability</span></div>
+        <span class="status-dot status-wip">진행 중</span>
+      </div>
+    </a>
+
+    <a class="card" href="#/entry/context-window" data-diff="2" data-status="open">
+      <div class="card-head">
+        <span class="card-num">№ 04</span>
+        <span class="diff diff-2">중급</span>
+      </div>
+      <h3 class="card-title">긴 컨텍스트에서 모델은 가운데를 잊는다</h3>
+      <p class="card-tldr">128k를 다 채워도 가운데에 둔 지시는 잘 무시된다. 내 프로젝트에서 시도한 회피 패턴들.</p>
+      <div class="card-foot">
+        <div class="card-tags"><span class="tag">context</span><span class="tag">prompting</span></div>
+        <span class="status-dot status-open">열린 문제</span>
+      </div>
+    </a>
+
+    <a class="card" href="#/entry/prompt-strategy" data-diff="2" data-status="solved">
+      <div class="card-head">
+        <span class="card-num">№ 05</span>
+        <span class="diff diff-2">중급</span>
+      </div>
+      <h3 class="card-title">System prompt에 넣을까, Few-shot으로 보여줄까</h3>
+      <p class="card-tldr">규칙을 “말로 설명”하는 것과 “예시로 보여주는” 것은 다르다. 무엇을 언제 쓰는지 정리.</p>
+      <div class="card-foot">
+        <div class="card-tags"><span class="tag">prompting</span><span class="tag">eval</span></div>
+        <span class="status-dot status-solved">해결됨</span>
+      </div>
+    </a>
+  </div>
+</section>
+
+<!-- ============================================================
+        Detail pages are imported below
+============================================================ -->
+<div id="entries-mount"></div>
+
+<script>
+// Inline-load each entry HTML by fetch fallback OR include directly.
+// We'll fetch via XHR for file:// safety: use synchronous concat.
+</script>
+
+<!-- Each entry as a separate static file, included via plain HTML imports -->
+<!-- We just inline them: -->
+
+</main>
+
+<script>
+// Load entries: fetch each HTML fragment and inject (works on http://; for file:// they should also work via same-origin).
+(async () => {
+  const ids = ["tokenizer-korean", "sampling-params", "self-attention", "context-window", "prompt-strategy"];
+  const mount = document.getElementById("entries-mount");
+  for (const id of ids) {
+    try {
+      const res = await fetch(`entries/${id}.html`);
+      const html = await res.text();
+      const wrap = document.createElement("div");
+      wrap.innerHTML = html;
+      while (wrap.firstChild) mount.appendChild(wrap.firstChild);
+    } catch (e) {
+      console.warn("entry load failed:", id, e);
+    }
+  }
+  // route after entries loaded
+  if (typeof route === "function") route();
+})();
+</script>
+
+<script src="app.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,64 @@
+---
+title: 실시간 주문이 실패할 때마다 base_price가 흔들리는 문제
+tldr: 미체결/실패한 실주문이 매 틱마다 재시도되며 기준가를 출렁이게 만들었다. 실패 시 쿨다운을 걸어 기준가를 유지하도록 정리.
+status: solved
+difficulty: 2
+tags: [trading, realtime, 안정성]
+project: bitcoin-ai-backend
+date: 2026-05-20
+impact: 실패 주문 재시도 폭주 → 기준가 노이즈 제거
+decision: 실주문 액션에만 실패 쿨다운 적용, update_base_price는 제외
+related: [how-this-wiki-works]
+---
+
+> 이 항목은 패턴을 보여주기 위한 예시다. 실제 작업 기록으로 자유롭게 교체하면 된다.
+
+## 관찰 / 문제
+
+실시간 매매 루프에서 매수/매도 주문이 미체결로 실패하면, 다음 틱에서 곧바로 다시 주문이
+나갔다. 시장이 빠르게 움직일 때는 같은 실패가 초당 여러 번 반복됐고, 그때마다 `base_price`가
+현재가로 갱신되며 기준선이 출렁였다.
+
+```
+[Realtime] BTC buy 실패 (미체결)
+[Realtime] BTC base_price 갱신 → 91,200,000
+[Realtime] BTC buy 실패 (미체결)
+[Realtime] BTC base_price 갱신 → 91,180,000
+... (틱마다 반복)
+```
+
+## 왜 그런가 / 원인
+
+두 가지가 겹쳤다.
+
+- 실패한 주문이 즉시 재시도 가능 상태로 돌아왔다 — 재시도 간 간격(쿨다운)이 없었다.
+- `update_base_price`(정상적으로 기준가만 갱신하는 액션)와 실제 주문 액션이 같은 경로를
+  타서, 실패해도 기준가 갱신이 따라 일어났다.
+
+## 해결
+
+실주문 액션(`buy_and_update`, `sell_and_update`)에 한해 실패 쿨다운을 적용했다.
+쿨다운 중에는 주문을 스킵하고 `base_price`를 그대로 유지한다. 정상 케이스인
+`update_base_price`는 쿨다운 대상에서 제외한다.
+
+```python
+is_order_action = action in ('buy_and_update', 'sell_and_update')
+if is_order_action:
+    last_fail = _realtime_failure_cooldown.get(trade_id)
+    if last_fail:
+        elapsed = (datetime.now(timezone.utc) - last_fail).total_seconds()
+        if elapsed < _REALTIME_FAILURE_COOLDOWN_SECONDS:
+            # 쿨다운 중 — 스킵하고 base_price 유지
+            return
+```
+
+<Callout label="결론">
+"실패하면 즉시 재시도"는 실시간 루프에서 거의 항상 나쁘다. 실패에는 쿨다운을, 그리고
+부수효과(여기선 기준가 갱신)는 성공 경로에서만 일어나도록 분리하라.
+</Callout>
+
+## 남은 의문
+
+쿨다운 시간(`_REALTIME_FAILURE_COOLDOWN_SECONDS`)을 고정값이 아니라 변동성에 따라
+적응시키면 더 나을까? 미체결과 진짜 오류(네트워크/인증)를 같은 쿨다운으로 묶는 게 맞는지도
+아직 확신이 없다 — 후자는 더 길게 가져가야 할 수도.
