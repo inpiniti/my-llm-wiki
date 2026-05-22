@@ -1,0 +1,58 @@
+---
+title: KIS 액세스 토큰 1분 1회 제한 — 앱·백엔드 이중 발급 충돌
+tldr: 앱이 /oauth2/tokenP로 토큰을 발급한 직후 백엔드가 같은 appkey로 또 발급하면 KIS의 "1분당 1회" 제한(EGW00133)에 막혀 인증이 실패한다. 본인 검증은 별도 제한이 없는 /oauth2/Approval로 대체한다.
+status: solved
+difficulty: 2
+tags: [KIS, 한국투자증권, OAuth, rate-limit, 멀티프로세스]
+project: bitcoin
+date: 2026-05-22
+impact: 멀티유저 전환 후 정상 자격증명인데도 로그인이 전면 실패 (401 KIS 인증 실패)
+decision: 백엔드의 본인 검증을 토큰 발급(tokenP)에서 웹소켓 키 발급(Approval)로 변경해 토큰 엔드포인트 중복 호출 제거
+related: [supabase-custom-jwt-rls-multiuser]
+---
+
+## 관찰 / 문제
+
+단일사용자 시절엔 잘 되던 로그인이 멀티유저 전환 후 "KIS 인증 실패 — 계좌번호/AppKey/시크릿키를 확인하세요"(HTTP 401)로 전면 실패했다. 자격증명은 정확했다.
+
+로그인 흐름이 KIS 토큰 엔드포인트(`/oauth2/tokenP`)를 **두 번** 때리고 있었다:
+
+1. 앱이 직접 `loginKis()` → `/oauth2/tokenP` (잔고·주문 조회용 토큰, T+0)
+2. 곧이어 백엔드 `/auth/kis-login` → 본인 검증용으로 같은 appkey로 `/oauth2/tokenP` 또 호출 (T+1~2초)
+
+## 왜 그런가 / 원인
+
+KIS의 접근토큰 발급(`/oauth2/tokenP`)은 **동일 appkey 기준 1분당 1회** 제한이 있다. 1분 내 재요청하면 `EGW00133`("접근토큰 발급 잠시 후 다시 시도")로 거부된다.
+
+앱과 백엔드는 **별도 프로세스**라 토큰 캐시를 공유하지 않는다. 게다가 백엔드를 재배포하면 인메모리 토큰 캐시가 비워져, 로그인 시 반드시 KIS를 직접 호출한다. 그래서 앱이 발급한 직후 2초 만에 들어온 백엔드 요청이 1분 제한에 정확히 걸렸다.
+
+핵심은 백엔드가 발급한 토큰을 **검증 용도로만 쓰고 즉시 버렸다**는 점 — 굳이 토큰 엔드포인트를 다시 칠 필요가 없었다.
+
+## 해결
+
+본인 검증을 토큰 엔드포인트가 아니라 **웹소켓 접속키 발급(`/oauth2/Approval`)** 으로 수행한다. Approval도 유효한 appkey/appsecret을 요구하므로 신원 증명 강도는 동일하고, 토큰 엔드포인트의 1분 제한과 무관하다. 게다가 실시간 감지에 필요한 `approval_key`를 검증과 동시에 확보하므로 작업이 줄어든다.
+
+```python
+# before: 토큰 발급으로 검증 (앱과 충돌)
+await kis_service.get_access_token(appkey, appsecret)  # 결과 버림 → EGW00133 충돌
+
+# after: 웹소켓 키 발급으로 검증 (다른 엔드포인트, 충돌 없음)
+approval_key = await issue_websocket_key(appkey, appsecret)  # /oauth2/Approval
+if not approval_key:
+    raise HTTPException(401, "KIS 인증 실패 ...")
+# approval_key는 websocket_keys 저장에 그대로 재사용
+```
+
+앱은 `tokenP`, 백엔드는 `Approval` — 서로 다른 엔드포인트라 더 이상 충돌하지 않는다.
+
+<Callout label="결론">
+같은 appkey로 KIS 토큰을 여러 곳(앱·백엔드)에서 발급하면 "1분당 1회" 제한에 걸린다. 신원 검증만 필요하다면 토큰 발급 대신 `/oauth2/Approval`(웹소켓 키)로 검증하라 — 별도 제한이 없고, 검증과 키 확보를 한 번에 끝낼 수 있다. 다중 프로세스가 같은 외부 rate-limited 자원을 두드릴 때는 "누가 언제 호출하는지"를 먼저 점검할 것.
+</Callout>
+
+## 남은 의문
+
+백엔드 자동매매(`auto_trade_service`)가 주문 시 자체적으로 `get_access_token`을 호출하는데, 사용자의 앱 로그인 직후 1분 이내에 첫 주문이 들어가면 같은 충돌이 재현될 수 있다. 다만 백엔드는 토큰을 ~24시간 캐시하므로 하루 첫 발급에서만 좁은 충돌 창이 있고, 매매는 보통 로그인과 시점이 떨어져 있어 현재는 문제로 드러나지 않았다.
+
+<Sidenote>
+KIS는 최근 "유효 토큰이 있으면 재발급 요청 시 기존 토큰 반환"으로 일부 완화했지만, 1분 내 신규 발급 요청에 대한 EGW00133은 여전히 관측된다. 계정/시점에 따라 동작이 달라 신뢰하지 않는 편이 안전하다.
+</Sidenote>
